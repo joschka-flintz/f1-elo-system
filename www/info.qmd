@@ -1,0 +1,73 @@
+---
+title: " "
+format: html
+#theme: none
+#highlight: false
+#css: "www/clean.css"
+--- 
+
+This simple Elo system works by two drivers competing against each other in a duel (race). In each duel, both drivers contribute a certain amount of their Elo points to a shared pot. Importantly, the stronger driver contributes more points than the weaker one. The driver who has finished the race in front of the other one wins the pot. As consequence, the loser of the duel looses the Elo points he has invested while the winner recovers his investment and gains the opponent's Elo input. By not only including intra-team duels but also duels between drivers of different constructors, in each race, each driver competes against every other driver in a duel. 
+
+The data used to run this system is provided by [Vopani](https://www.kaggle.com/rohanrao) and available on [Kaggle](https://www.kaggle.com/datasets/rohanrao/formula-1-world-championship-1950-2020). Big thanks to him for collecting and sharing the data.
+
+
+### Constructor Performance Rating
+
+In order to account for the performance differences between cars, I compute a simple constructor rating which is factored in when computing the drivers' Elo gains and losses from a duel. Specifically, for each race $i$, I calculate the average finishing position of all cars of a constructor ($TP_{c,i}$) and set it relative to the total number of cars that have finished the race ($F_i$). Then a team's performance rating ($TR_{c,i}$) in a given race is determined by the average of the team's relative average finishing position ($\tilde{TP}_{c, i}$) in the three races before and after the race, as well as the race itself ($\mathcal{W}_i$). The rating is supposed to reflect the general performance level of a constructor's car with values closer to zero indicating a strong car and values close to one a weak car.
+
+$$
+\tilde{TP}_{c, i} = \frac{TP_{c, i}}{F_i}
+$$
+
+$$
+\mathcal{W}_i = \left\{ i + k \mid -3 \leq k \leq 3, \text{ and race } i + k \text{ exists} \right\}
+$$
+
+$$
+TR_{c, i} = \frac{1}{|\mathcal{W}_i|} \sum_{j \in \mathcal{W}_i} \tilde{TP}_{c, j}
+$$
+
+Obviously, the constructor rating measure is inherently flawed since a driver's ability has a direct impact on his team's rating. However, under the (realistic) assumption that better drivers sort to better teams and vice versa, the team rating overstates/understates the true capacity of a good/bad team. This leads to smaller Elo gains for good drivers and smaller Elo losses for weaker drivers, rendering the results rather conservative. With this argument, I consider the issue "solved".
+
+### Driver vs. Opponent
+
+In a race, every driver competes against every other driver in a duel. The driver who finishes in front of his opponent wins the duel and the corresponding Elo pot. Every duel has a pot of $A$ elo points, which are contributed by both drivers at different shares, depending on their current Elo ratings $E_{r-1}$. A driver's elo input share $s^d_r$ is computed following 
+
+$$
+s^d_i = \frac{A^{(E^d_{i-1} / z)}}{(A^{(E^d_{i-1} / z)} + A^{(E^o_{i-1} / z)})}  
+$$
+
+with $d$ and $o$ indicating "driver" and "opponent", and $z$ reflecting the importance of the competitors' current Elo rating. As consequence, the change in a driver's Elo rating after a duel is given by
+
+$$
+\Delta E^d_i = (\mathbf{1}^d_{victory, i} \times A - s^d_i \times A) \times k .
+$$
+
+$k$ factors in the strength of the drivers' teams and is given by 
+
+$$
+k = 
+\begin{cases}
+  \min\left(\frac{R_d^r}{R_d^r + R_o^r}, \frac{R_o^r}{R_d^r + R_o^r}\right), & \text{if driver of better team has won}  \\
+  \max\left(\frac{R_d^r}{R_d^r + R_o^r}, \frac{R_o^r}{R_d^r + R_o^r}\right), & \text{if driver of weaker team has won}
+\end{cases}
+$$
+
+Essentially, each drivers' team rating is divided by the sum of the team ratings of both competitors. In case the driver of the team with a higher rating wins the duel, the Elo gains of the winner and losses of the loser are weighted by the smaller ratio, leading to smaller Elo changes because the result is expected given the cars' performance levels. The other way around, if the driver of the weaker team wins, the Elo changes are weighted by the larger ratio, leading to greater increases and reductions in Elo due to the greater achievement of the weaker constructor's driver/ the poorer performance of the better team's driver. If two teammates compete against each other, $k$ is always set to $0.5$. $r$ determines the amount of points that can be gained and lost in unequal duels. With increasing $r$, drivers who win in dominant cars earn fewer Elo points, while those who lose in inferior machinery lose fewer points. The other way around, when a drivers of a weak team wins a duel, they experience a larger Elo gain, while the losing driver from the stronger team suffers a larger deduction.
+
+### Implementation
+
+
+To compute the Elo system, I iterate through each race, calculate the Elo changes for each driver
+by either summing up or averaging the Elo gains/losses of each duel a driver participated in, and update their ratings before moving on to the next event. Using averages bears the advantage of eliminating bias arising from different numbers of duels between drivers. Crucially, I only construct duels between drivers who finished the race. Drivers who did not finish (DNFs) are excluded entirely, as the reason for their retirement is often unclear in the data. In the data, DNFs are indicated by missing values in the position column. However, this approach introduces some imprecision: for example, a driver who retires just a few laps before the end may still be assigned a finishing position. This occurred for example with Max Verstappen in Bahrain 2022, where he retired due to mechanical issues shortly before the finish but is still listed in 19th place.
+
+<!-- While this system allows for inter-constructor competition and thus, utilizes a lot more information in the -->
+<!-- data than a simple comparison between team mates, it falls prone to a number of other caveats that might -->
+<!-- bias the ELO ratings:  -->
+
+<!-- - Constructor rating is a weak predictor of a car's quality -->
+<!-- - Race-specific quality differences between cars -->
+<!-- - Car developments aligned with driving preferences of a particular driver -->
+<!-- - Inflated race calendars in more recent times -->
+
+
